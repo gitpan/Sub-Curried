@@ -8,7 +8,7 @@ Sub::Curried - Currying of subroutines via a new 'curry' declarator
 
  curry add_n_to ($n, $val) {
     return $n+$val;
- }
+ };
 
  my $add_10_to = add_n_to( 10 );
 
@@ -41,7 +41,7 @@ use Carp 'croak';
 use Devel::Declare;
 use Sub::Name;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub mk_my_var {
     my ($sigil, $name) = @_;
@@ -111,6 +111,11 @@ sub import {
     }
   );
 }
+
+=head1 BUGS
+
+Note that C<Devel::Declare> currently requires a trailing semicolon ";" after the C<curry>
+declaration.
 
 =head1 SEE ALSO
 
