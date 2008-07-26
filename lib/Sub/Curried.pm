@@ -41,7 +41,7 @@ use Carp 'croak';
 use Devel::Declare;
 use Sub::Name;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub mk_my_var {
     my ($sigil, $name) = @_;
@@ -52,7 +52,7 @@ sub mk_my_var {
 }
 sub trim {
     s/^\s*//;
-    s/s*$//;
+    s/\s*$//;
     $_;
 }
 sub get_decl {
