@@ -16,8 +16,10 @@ no_index:
   directory:
     - inc
     - t
+    - examples
+    - examples
 requires:
   Carp: 0.00
   Devel::Declare: 0.00
   Sub::Name: 0.00
-version: 0.02
+version: 0.04

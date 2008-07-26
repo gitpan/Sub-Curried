@@ -41,7 +41,7 @@ use Carp 'croak';
 use Devel::Declare;
 use Sub::Name;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 sub mk_my_var {
     my ($sigil, $name) = @_;
@@ -119,7 +119,7 @@ declaration.
 
 =head1 SEE ALSO
 
-L<Devel::Debug> provides the magic (yes, there's a teeny bit of code
+L<Devel::Declare> provides the magic (yes, there's a teeny bit of code
 generation involved, but it's not a global filter, rather a localised
 parsing hack).
 
