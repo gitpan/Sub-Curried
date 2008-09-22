@@ -9,7 +9,8 @@ use Sub::Curried;
 
 curry add_n_to ($n, $val) {
     return $n + $val;
-};
+}
+# look ma, no semicolon!
 
 isa_ok (\&add_n_to, 'Sub::Curried');
 my $add_10_to = add_n_to(10);

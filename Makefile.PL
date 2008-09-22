@@ -9,8 +9,9 @@ license 'perl';
 author 'osfameron';
 
 # Specific dependencies
-requires        'Devel::Declare'  => '0.00';
+requires        'Devel::Declare'  => '0.002000'; # new version
 requires        'Sub::Name'       => '0.00';
+requires        'Scope::Guard'    => '0.00';
 requires        'Carp'            => '0.00';
 build_requires  'Test::More'      => '0.42';
 build_requires  'Test::Exception' => '0.00';

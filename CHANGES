@@ -1,3 +1,6 @@
+2008-09-22
+    0.05 Updated to D::D 0.002000, with new internals and hack to avoid final semicolon!
+
 2008-07-26
     0.04 corrected doc typo (ilmari++)
          added examples/cycle.pl

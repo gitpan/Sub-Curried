@@ -6,8 +6,12 @@ use Sub::Curried;
 
 # use feature 'say'; # I can't get Devel::Declare to install on 5.10, bah
 sub say {
-    my @what = @_ || $_;
-    print for @what, "\n";
+    if (@_) {
+        print for @_;
+    } else {
+        print;
+    }
+    print "\n";
 }
 
 # We want to be able to declare an infinite list of repeated values, for example
@@ -18,32 +22,22 @@ curry cycle (@list) {
         @curr = @list unless @curr;
         return shift @curr;
         };
-};
+}
 
 # we can't just use (*) like in Haskell :-)
-curry times ($x,$y) { $x * $y };
+curry times ($x,$y) { $x * $y }
 
-curry mk_seq (@multipliers) {
-    # This is an iterator to an infinite list of functions that multiply
-    # by, for example, 2.5, 2, 2, 2.5, 2, 2, in turn
-    return cycle([ map { times($_) } @multipliers ]);
-};
-
-curry scan_iterator ($it, $start) {
-    my $next = $start;
+curry scanl ($fn, $start, $it) {
+    my $curr = $start;
     return sub {
-        my $ret = $next;
-        $next = $it->()->($next); # prepare next value;
+        my $ret = $curr;
+        $curr = $fn->($curr, $it->());
         return $ret;
-        };
-};
+    };
+}
 
-curry iterator_to_array ($it, $count) {
+curry take ($count, $it) {
     return map { $it->() } 1..$count;
-};
+}
 
-say for iterator_to_array( 
-        scan_iterator(
-            mk_seq( [2.5, 2, 2] )
-        )->(10) # start value
-    )->(12); # number of iterations
+say for take 12 => scanl(times)->(10 => cycle [2.5, 2, 2] );

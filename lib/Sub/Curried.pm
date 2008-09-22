@@ -8,7 +8,7 @@ Sub::Curried - Currying of subroutines via a new 'curry' declarator
 
  curry add_n_to ($n, $val) {
     return $n+$val;
- };
+ }
 
  my $add_10_to = add_n_to( 10 );
 
@@ -40,8 +40,24 @@ use Carp 'croak';
 
 use Devel::Declare;
 use Sub::Name;
+use Scope::Guard;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
+
+# cargo culted
+sub import {
+    my $class = shift;
+    my $caller = caller;
+
+    Devel::Declare->setup_for(
+        $caller,
+        { curry => { const => \&parser } }
+    );
+
+    # would be nice to sugar this
+    no strict 'refs';
+    *{$caller.'::curry'} = sub (&) {};
+}
 
 sub mk_my_var {
     my ($sigil, $name) = @_;
@@ -60,62 +76,147 @@ sub get_decl {
     map trim, split /,/ => $decl;
 }
 
-sub import {
-  my $package = caller();
+# Stolen from Devel::Declare's t/method-no-semi.t / Method::Signatures
+{
+    our ($Declarator, $Offset);
+    sub skip_declarator {
+        $Offset += Devel::Declare::toke_move_past_token($Offset);
+    }
 
-  Devel::Declare->install_declarator(
-    $package, 'curry', DECLARE_PACKAGE | DECLARE_PROTO,
-    sub {
-        my ($name, $decl) = @_;
+    sub skipspace {
+        $Offset += Devel::Declare::toke_skipspace($Offset);
+    }
 
-        my @decl = get_decl($decl);
+    sub strip_name {
+        skipspace;
+        if (my $len = Devel::Declare::toke_scan_word($Offset, 1)) {
+            my $linestr = Devel::Declare::get_linestr();
+            my $name = substr($linestr, $Offset, $len);
+            substr($linestr, $Offset, $len) = '';
+            Devel::Declare::set_linestr($linestr);
+            return $name;
+        }
+        return;
+    }
 
-        my $string = join " ", map { # BUG in DD? can't be newline separated
+    sub strip_proto {
+        skipspace;
+    
+        my $linestr = Devel::Declare::get_linestr();
+        if (substr($linestr, $Offset, 1) eq '(') {
+            my $length = Devel::Declare::toke_scan_str($Offset);
+            my $proto = Devel::Declare::get_lex_stuff();
+            Devel::Declare::clear_lex_stuff();
+            $linestr = Devel::Declare::get_linestr();
+            substr($linestr, $Offset, $length) = '';
+            Devel::Declare::set_linestr($linestr);
+            return $proto;
+        }
+        return;
+    }
+
+    sub shadow {
+        my $pack = Devel::Declare::get_curstash_name;
+        Devel::Declare::shadow_sub("${pack}::${Declarator}", $_[0]);
+    }
+
+    sub inject_if_block {
+        my $inject = shift;
+        skipspace;
+        my $linestr = Devel::Declare::get_linestr;
+        if (substr($linestr, $Offset, 1) eq '{') {
+            substr($linestr, $Offset+1, 0) = $inject;
+            Devel::Declare::set_linestr($linestr);
+        }
+    }
+
+    # This parser is likely to be semi-standard
+    # It will call a make_proto_unwrap, which is likely to be heavily customized
+    sub parser {
+        local ($Declarator, $Offset) = @_;
+        skip_declarator;
+        my $name = strip_name;
+        my $proto = strip_proto;
+
+        my @decl = get_decl($proto);
+
+        my $inject = make_proto_unwrap(@decl);
+        if (defined $name) {
+            $inject = scope_injector_call().$inject;
+        }
+        inject_if_block($inject);
+
+        if (defined $name) {
+            $name = join('::', Devel::Declare::get_curstash_name(), $name)
+              unless ($name =~ /::/);
+        }
+        my $installer = sub (&) {
+            my $cr = shift;
+            my $make_f;
+            $make_f = sub {
+                my @filled = @_;
+                return bless  sub {
+                    my @args = @_;
+                    my $expected = @decl;
+                    my $got      = @filled + @args;
+                    if ($got > $expected) {
+                        my $_name = defined $name ? $name : '(anon)';
+                        croak "$_name called with $got args, expected $expected";
+                    }
+                    elsif ($got == $expected) {
+                        $cr->(@filled,@args);
+                    }
+                    else {
+                        return $make_f->(@filled,@args);
+                    }
+                    }, __PACKAGE__;
+                };
+            my $f=$make_f->();
+            if ($name) {
+                no strict 'refs';
+                # So caller() gets the subroutine name
+                *{$name} = subname $name => $f;
+            }
+            $f;
+          };
+        shadow($installer);
+    }
+
+    sub make_proto_unwrap {
+        my @decl = @_;
+
+        my $string = join " ", map { 
+            # was BUG in DD 0.1: can't be newline separated, check 0.2?
             my ($vsigil, $vname) = /^([\$%@])(\w+)$/
                 or die "Bad sigil: $_!"; # not croak, this is in compilation phase
             mk_my_var($vsigil, $vname);
             } @decl;
 
         return $string;
-    },
-    sub {
-        my ($name, $decl, $sub, @rest) = @_;
-        my @decl = get_decl($decl);
-
-        my $make_f;
-        $make_f = sub {
-            my @filled = @_;
-            return bless  sub {
-                my @args = @_;
-                my $expected = @decl;
-                my $got      = @filled + @args;
-                if ($got > $expected) {
-                    croak "$name called with $got args, expected $expected";
-                }
-                elsif ($got == $expected) {
-                    $sub->(@filled,@args);
-                }
-                else {
-                    return $make_f->(@filled,@args);
-                }
-                }, __PACKAGE__;
-            };
-        my $f=$make_f->();
-        if ($name) {
-            no strict 'refs';
-            subname $name =>$f;
-            my $fqn = "${package}::${name}";
-            *$fqn = $f;
-        }
-        return $f;
     }
-  );
+
+    # Set up the parser scoping hacks that allow us to omit the final
+    # semicolon
+    sub scope_injector_call {
+        my $pkg = __PACKAGE__;
+        return " BEGIN { ${pkg}::inject_scope }; ";
+    }
+    sub inject_scope {
+        $^H |= 0x120000;
+        $^H{DD_METHODHANDLERS} = Scope::Guard->new(sub {
+            my $linestr = Devel::Declare::get_linestr;
+            my $offset = Devel::Declare::get_linestr_offset;
+            substr($linestr, $offset, 0) = ';';
+            Devel::Declare::set_linestr($linestr);
+        });
+    }
 }
+
 
 =head1 BUGS
 
-Note that C<Devel::Declare> currently requires a trailing semicolon ";" after the C<curry>
-declaration.
+No major bugs currently open.  Please report any bugs via RT or email, or ping
+me on IRC (osfameron on irc.perl.org and freenode)
 
 =head1 SEE ALSO
 
