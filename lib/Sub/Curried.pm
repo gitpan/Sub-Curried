@@ -12,7 +12,7 @@ Sub::Curried - Currying of subroutines via a new 'curry' declarator
 
  my $add_10_to = add_n_to( 10 );
 
- say $add_n_to->(4);  # 14
+ say $add_10_to->(4);  # 14
 
  # but you can also
  say add_n_to(10,4);  # also 14
@@ -42,7 +42,7 @@ use Devel::Declare;
 use Sub::Name;
 use Scope::Guard;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 # cargo culted
 sub import {
@@ -72,7 +72,7 @@ sub trim {
     $_;
 }
 sub get_decl {
-    my $decl = shift;
+    my $decl = shift || '';
     map trim, split /,/ => $decl;
 }
 
