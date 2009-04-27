@@ -19,6 +19,6 @@ is( $add_10_to->(4), 14, "curried");
 is( add_n_to(9,4),   13, "non-curried");
 is( add_n_to(8)->(3),11, "chained curried call");
 
-dies_ok {
+throws_ok {
     add_n_to(1,2,3);
-    } 'Dies on too many parameters';
+    } qr/add_n_to, expected 2 args but got 3/;

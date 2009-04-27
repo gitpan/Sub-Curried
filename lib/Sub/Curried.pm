@@ -23,26 +23,27 @@ Sub::Curried - Currying of subroutines via a new 'curry' declarator
 =head1 DESCRIPTION
 
 Currying and Partial Application come from the heady world of functional
-programming, but are actually useful techniques.  Partial Application is
-used to progressively specialise a subroutine, by pre-binding some of the
-arguments.
+programming, but are actually useful techniques.  Partial Application is used
+to progressively specialise a subroutine, by pre-binding some of the arguments.
 
-Partial application is the generic term, that also encompasses the concept
-of plugging in "holes" in arguments at arbitrary positions.  Currying is
-(I think) more specifically the application of arguments progressively from
-left to right until you have enough of them.
+Partial application is the generic term, that also encompasses the concept of
+plugging in "holes" in arguments at arbitrary positions.  Currying is more
+specifically the application of arguments progressively from left to right
+until you have enough of them.
 
 =cut
 
 package Sub::Curried;
+use base 'Sub::Composable';
 use strict; use warnings;
 use Carp 'croak';
 
 use Devel::Declare;
 use Sub::Name;
-use Scope::Guard;
+use Sub::Current;
+use B::Hooks::EndOfScope;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 # cargo culted
 sub import {
@@ -60,12 +61,15 @@ sub import {
 }
 
 sub mk_my_var {
-    my ($sigil, $name) = @_;
-    my $shift = $sigil eq '$' ?
+    my ($name) = @_;
+    my ($vsigil, $vname) = /^([\$%@])(\w+)$/
+        or die "Bad sigil: $_!"; # not croak, this is in compilation phase
+    my $shift = $vsigil eq '$' ?
         'shift'
-      : "${sigil}{+shift}";
-    return qq[my $sigil$name = $shift;];
+      : "${vsigil}{+shift}";
+    return qq[my $vsigil$vname = $shift;];
 }
+
 sub trim {
     s/^\s*//;
     s/\s*$//;
@@ -130,8 +134,11 @@ sub get_decl {
         }
     }
 
-    # This parser is likely to be semi-standard
-    # It will call a make_proto_unwrap, which is likely to be heavily customized
+    sub check_args {
+        my ($name, $exp, $actual) = @_;
+        die "$name, expected $exp args but got $actual" if $actual>$exp;
+    }
+
     sub parser {
         local ($Declarator, $Offset) = @_;
         skip_declarator;
@@ -140,10 +147,32 @@ sub get_decl {
 
         my @decl = get_decl($proto);
 
-        my $inject = make_proto_unwrap(@decl);
+        # We nest each layer of currying in its own sub.
+        # if we were passed more than one argument, then we call more than one layer.
+        # We use the closing brace '}' trick as per monads, but also place the calling
+        # logic here.
+
+        my $si = scope_injector_call(', "Sub::Curried"; $f=$f->($_) for @_; $f}');
+
+        my $exp_check = sub {
+            my $exp= scalar @decl;
+            sub {
+                my $name = $name ? qq('$name') : 'undef';
+                my $ret = qq[ Sub::Curried::check_args($name,$exp,scalar \@_); ];
+                $exp--; return $ret;
+              }
+          }->();
+            
+        my $inject = (@decl ? 'return Sub::Current::ROUTINE unless @_;' : '') 
+              . join qq[ my \$f = bless sub { $si; ],
+                map { 
+                    $exp_check->() . mk_my_var($_);
+                } @decl;
+
         if (defined $name) {
             $inject = scope_injector_call().$inject;
         }
+
         inject_if_block($inject);
 
         if (defined $name) {
@@ -151,30 +180,10 @@ sub get_decl {
               unless ($name =~ /::/);
         }
         my $installer = sub (&) {
-            my $cr = shift;
-            my $make_f;
-            $make_f = sub {
-                my @filled = @_;
-                return bless  sub {
-                    my @args = @_;
-                    my $expected = @decl;
-                    my $got      = @filled + @args;
-                    if ($got > $expected) {
-                        my $_name = defined $name ? $name : '(anon)';
-                        croak "$_name called with $got args, expected $expected";
-                    }
-                    elsif ($got == $expected) {
-                        $cr->(@filled,@args);
-                    }
-                    else {
-                        return $make_f->(@filled,@args);
-                    }
-                    }, __PACKAGE__;
-                };
-            my $f=$make_f->();
+            my $f = shift;
+            bless $f, __PACKAGE__;
             if ($name) {
                 no strict 'refs';
-                # So caller() gets the subroutine name
                 *{$name} = subname $name => $f;
             }
             $f;
@@ -182,33 +191,19 @@ sub get_decl {
         shadow($installer);
     }
 
-    sub make_proto_unwrap {
-        my @decl = @_;
-
-        my $string = join " ", map { 
-            # was BUG in DD 0.1: can't be newline separated, check 0.2?
-            my ($vsigil, $vname) = /^([\$%@])(\w+)$/
-                or die "Bad sigil: $_!"; # not croak, this is in compilation phase
-            mk_my_var($vsigil, $vname);
-            } @decl;
-
-        return $string;
-    }
-
     # Set up the parser scoping hacks that allow us to omit the final
     # semicolon
     sub scope_injector_call {
-        my $pkg = __PACKAGE__;
-        return " BEGIN { ${pkg}::inject_scope }; ";
+        my $pkg  = __PACKAGE__;
+        my $what = shift || ';';
+        return " BEGIN { B::Hooks::EndOfScope::on_scope_end { ${pkg}::add_at_end_of_scope('$what') } }; ";
     }
-    sub inject_scope {
-        $^H |= 0x120000;
-        $^H{DD_METHODHANDLERS} = Scope::Guard->new(sub {
-            my $linestr = Devel::Declare::get_linestr;
-            my $offset = Devel::Declare::get_linestr_offset;
-            substr($linestr, $offset, 0) = ';';
-            Devel::Declare::set_linestr($linestr);
-        });
+    sub add_at_end_of_scope {
+        my $what = shift || ';';
+        my $linestr = Devel::Declare::get_linestr;
+        my $offset = Devel::Declare::get_linestr_offset;
+        substr($linestr, $offset, 0) = $what;
+        Devel::Declare::set_linestr($linestr);
     }
 }
 
@@ -255,7 +250,7 @@ to declare how many arguments it's expecting)
 
 =head1 AUTHOR and LICENSE
 
- (c)2008 osfameron@cpan.org
+ (c)2008-2009 osfameron@cpan.org
 
 This module is distributed under the same terms and conditions as Perl itself.
 
