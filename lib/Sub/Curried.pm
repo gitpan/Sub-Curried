@@ -105,7 +105,7 @@ use Sub::Current;
 use B::Hooks::EndOfScope;
 use Devel::BeginLift;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 # cargo culted
 sub import {
@@ -320,6 +320,8 @@ to declare how many arguments it's expecting)
 This module is distributed under the same terms and conditions as Perl itself.
 
 Please submit bugs to RT or shout at me on IRC (osfameron on #london.pm on irc.perl.org)
+
+A git repo is available at L<http://github.com/osfameron/Sub--Curried/tree/master>
 
 =cut
 
